@@ -17,7 +17,8 @@ import { configureAllTools } from "./tools.js";
 import { UserAgentComposer } from "./useragent.js";
 import { packageVersion } from "./version.js";
 import { DomainsManager } from "./shared/domains.js";
-import { resolveOrganizationConfig } from "./utils.js";
+import { resolveOrganizationConfig, isAzureDevOpsServicesUrl } from "./utils.js";
+import { installNtlmFetchInterceptor, readNtlmCredentialsFromEnvironment, createNtlmAuthHandler } from "./ntlm-auth.js";
 
 function isGitHubCodespaceEnv(): boolean {
   return process.env.CODESPACES === "true" && !!process.env.CODESPACE_NAME;
@@ -48,7 +49,7 @@ const argv = yargs(hideBin(process.argv))
     alias: "a",
     describe: "Type of authentication to use",
     type: "string",
-    choices: ["interactive", "azcli", "env", "envvar", "pat"],
+    choices: ["interactive", "azcli", "env", "envvar", "pat", "ntlm"],
     default: defaultAuthenticationType,
   })
   .option("tenant", {
@@ -73,6 +74,16 @@ export const enabledDomains = domainsManager.getEnabledDomains();
 
 function getAzureDevOpsClient(getAzureDevOpsToken: () => Promise<string>, userAgentComposer: UserAgentComposer, authType: string): () => Promise<WebApi> {
   return async () => {
+    if (authType === "ntlm") {
+      const credentials = readNtlmCredentialsFromEnvironment();
+      const authHandler = createNtlmAuthHandler(credentials);
+      return new WebApi(orgUrl, authHandler, undefined, {
+        productName: "AzureDevOps.MCP",
+        productVersion: packageVersion,
+        userAgent: userAgentComposer.userAgent,
+      });
+    }
+
     const accessToken = await getAzureDevOpsToken();
     // For pat, accessToken is base64("{email}:{token}"). Decode to extract the token part,
     // since getPersonalAccessTokenHandler prepends ":" internally and just needs the raw token.
@@ -96,7 +107,14 @@ async function main() {
     enabledDomains: Array.from(enabledDomains),
     version: packageVersion,
     isCodespace: isGitHubCodespaceEnv(),
+    isAzureDevOpsServices: isAzureDevOpsServicesUrl(orgUrl),
   });
+
+  if (argv.authentication === "ntlm" && isAzureDevOpsServicesUrl(orgUrl)) {
+    logger.warn("NTLM authentication is intended for Azure DevOps Server on-prem deployments", {
+      organizationUrl: orgUrl,
+    });
+  }
 
   const server = new McpServer({
     name: "Azure DevOps MCP Server",
@@ -114,6 +132,16 @@ async function main() {
   };
   const tenantId = (await getOrgTenant(orgName)) ?? argv.tenant;
   const authenticator = createAuthenticator(argv.authentication, tenantId);
+
+  if (argv.authentication === "ntlm") {
+    const credentials = readNtlmCredentialsFromEnvironment();
+    installNtlmFetchInterceptor(credentials);
+    await authenticator();
+    logger.info("NTLM authentication configured", {
+      username: credentials.domain ? `${credentials.domain}\\${credentials.username}` : credentials.username,
+      ntlmImplementation: "@node-ntlm/axios",
+    });
+  }
 
   if (argv.authentication === "pat") {
     const basicValue = await authenticator();

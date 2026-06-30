@@ -5,6 +5,7 @@ import { AzureCliCredential, ChainedTokenCredential, DefaultAzureCredential, Tok
 import { AccountInfo, AuthenticationResult, PublicClientApplication } from "@azure/msal-node";
 import open from "open";
 import { logger } from "./logger.js";
+import { readNtlmCredentialsFromEnvironment } from "./ntlm-auth.js";
 
 const scopes = ["499b84ac-1321-427f-aa17-267ca6975798/.default"];
 
@@ -90,6 +91,16 @@ function createAuthenticator(type: string, tenantId?: string): () => Promise<str
         // Return base64 value as-is — caller uses it directly as the Basic auth credential
         logger.debug(`${type}: Successfully retrieved PAT from environment variable`);
         return b64Pat;
+      };
+
+    case "ntlm":
+      logger.debug(`Authenticator: Using NTLM authentication for on-prem domain credentials`);
+      return async () => {
+        const credentials = readNtlmCredentialsFromEnvironment();
+        logger.debug(`${type}: Loaded NTLM credentials`, {
+          username: credentials.domain ? `${credentials.domain}\\${credentials.username}` : credentials.username,
+        });
+        return "ntlm";
       };
 
     case "envvar":
