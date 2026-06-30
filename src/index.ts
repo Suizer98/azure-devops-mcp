@@ -17,6 +17,7 @@ import { configureAllTools } from "./tools.js";
 import { UserAgentComposer } from "./useragent.js";
 import { packageVersion } from "./version.js";
 import { DomainsManager } from "./shared/domains.js";
+import { resolveOrganizationConfig } from "./utils.js";
 
 function isGitHubCodespaceEnv(): boolean {
   return process.env.CODESPACES === "true" && !!process.env.CODESPACE_NAME;
@@ -55,11 +56,17 @@ const argv = yargs(hideBin(process.argv))
     describe: "Azure tenant ID (optional, applied when using 'interactive' and 'azcli' type of authentication)",
     type: "string",
   })
+  .option("server-url", {
+    alias: "u",
+    describe: "Azure DevOps server URL, defaults to https://dev.azure.com/{organization}.",
+    type: "string",
+  })
   .help()
   .parseSync();
 
-export const orgName = argv.organization as string;
-const orgUrl = "https://dev.azure.com/" + orgName;
+const organizationConfig = resolveOrganizationConfig(argv.organization as string, argv["server-url"] as string | undefined);
+export const orgName = organizationConfig.organizationName;
+export const orgUrl = organizationConfig.organizationUrl;
 
 const domainsManager = new DomainsManager(argv.domains);
 export const enabledDomains = domainsManager.getEnabledDomains();

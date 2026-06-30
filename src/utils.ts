@@ -127,6 +127,75 @@ export function getOrgFromUrl(url: string): string | null {
   }
 }
 
+function getCollectionNameFromUrl(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const segment = u.pathname.split("/").filter(Boolean)[0];
+    return segment ? decodeURIComponent(segment).toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isAzureDevOpsServicesUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "dev.azure.com" || host.endsWith(".dev.azure.com") || host.endsWith(".visualstudio.com");
+  } catch {
+    return false;
+  }
+}
+
+function normalizeOrganizationUrl(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+function collectionUrlFromPageUrl(url: string): string {
+  const parsed = new URL(url);
+  const collectionSegment = parsed.pathname.split("/").filter(Boolean)[0];
+  if (!collectionSegment) {
+    throw new Error(`Could not determine collection from URL: ${url}`);
+  }
+  return normalizeOrganizationUrl(`${parsed.origin}/${collectionSegment}`);
+}
+
+export function resolveOrganizationConfig(organization: string, serverUrlOverride?: string): { organizationName: string; organizationUrl: string } {
+  const explicitServerUrl = serverUrlOverride?.trim() || process.env.AZURE_DEVOPS_SERVER_URL?.trim();
+  if (explicitServerUrl) {
+    const organizationUrl = organization.startsWith("http://") || organization.startsWith("https://") ? collectionUrlFromPageUrl(organization) : normalizeOrganizationUrl(explicitServerUrl);
+    const organizationName = getOrgFromUrl(organizationUrl) ?? getCollectionNameFromUrl(organizationUrl) ?? organization;
+    return { organizationName, organizationUrl };
+  }
+
+  if (organization.startsWith("http://") || organization.startsWith("https://")) {
+    const organizationUrl = collectionUrlFromPageUrl(organization);
+    const organizationName = getOrgFromUrl(organizationUrl) ?? getCollectionNameFromUrl(organizationUrl);
+    if (!organizationName) {
+      throw new Error(`Could not determine organization from URL: ${organization}`);
+    }
+    return { organizationName, organizationUrl };
+  }
+
+  return {
+    organizationName: organization,
+    organizationUrl: normalizeOrganizationUrl(`https://dev.azure.com/${organization}`),
+  };
+}
+
+export function getSearchBaseUrl(serverUrl: string, organizationName: string): string {
+  if (isAzureDevOpsServicesUrl(serverUrl)) {
+    return `https://almsearch.dev.azure.com/${organizationName}`;
+  }
+  return normalizeOrganizationUrl(serverUrl);
+}
+
+export function getIdentityBaseUrl(serverUrl: string, organizationName: string): string {
+  if (isAzureDevOpsServicesUrl(serverUrl)) {
+    return `https://vssps.dev.azure.com/${organizationName}`;
+  }
+  return normalizeOrganizationUrl(serverUrl);
+}
+
 /**
  * Convert a Node.js ReadableStream to a string.
  * Shared utility for consistent stream handling across tools.
