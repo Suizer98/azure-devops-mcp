@@ -21,12 +21,7 @@ import https from "node:https";
 import { join } from "node:path";
 import { NtlmClient } from "@node-ntlm/axios";
 import { WebApi } from "azure-devops-node-api";
-import {
-  installNtlmFetchInterceptor,
-  readNtlmCredentialsFromEnvironment,
-  createNtlmAuthHandler,
-  parseDomainUsername,
-} from "../dist/ntlm-auth.js";
+import { installNtlmFetchInterceptor, readNtlmCredentialsFromEnvironment, createNtlmAuthHandler, parseDomainUsername } from "../dist/ntlm-auth.js";
 
 const orgUrl = process.env.ADO_ORG_URL ?? "https://devops.esrisa.com/PUB";
 const projectTop = Number(process.env.ADO_MCP_TOP ?? "100");

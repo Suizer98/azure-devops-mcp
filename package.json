@@ -42,9 +42,11 @@
     "@azure/msal-node": "^5.0.6",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@node-ntlm/axios": "^0.3.2",
+    "dotenv": "^16.6.1",
     "azure-devops-extension-api": "^5.272.3",
     "azure-devops-extension-sdk": "^4.0.2",
     "azure-devops-node-api": "^15.1.2",
+    "express": "^5.2.1",
     "typed-rest-client": "2.1.0",
     "winston": "^3.18.3",
     "yargs": "^18.0.0",
@@ -52,6 +54,7 @@
     "zod-to-json-schema": "^3.24.5"
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.19.1",
     "eslint-config-prettier": "10.1.8",

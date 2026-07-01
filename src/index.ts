@@ -3,6 +3,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+import "./env.js";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { getBearerHandler, getPersonalAccessTokenHandler, WebApi } from "azure-devops-node-api";
@@ -10,6 +12,7 @@ import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
 import { createAuthenticator } from "./auth.js";
+import { startHttpTransport } from "./http-transport.js";
 import { logger } from "./logger.js";
 import { getOrgTenant } from "./org-tenants.js";
 //import { configurePrompts } from "./prompts.js";
@@ -62,6 +65,51 @@ const argv = yargs(hideBin(process.argv))
     describe: "Azure DevOps server URL, defaults to https://dev.azure.com/{organization}.",
     type: "string",
   })
+  .option("transport", {
+    alias: "T",
+    describe: "Transport mode: stdio for local clients (Cursor), http for remote hosting (Copilot Studio).",
+    type: "string",
+    choices: ["stdio", "http"],
+    default: "stdio",
+  })
+  .option("port", {
+    alias: "p",
+    describe: "HTTP port when using --transport http.",
+    type: "number",
+    default: 8000,
+  })
+  .option("https-port", {
+    describe: "HTTPS port when using --transport http with --tls-cert and --tls-key.",
+    type: "number",
+    default: 8080,
+  })
+  .option("tls-cert", {
+    describe: "TLS certificate file path for the HTTPS listener.",
+    type: "string",
+  })
+  .option("tls-key", {
+    describe: "TLS private key file path for the HTTPS listener.",
+    type: "string",
+  })
+  .option("host", {
+    describe: "HTTP bind address when using --transport http. Use 0.0.0.0 for remote access.",
+    type: "string",
+    default: "127.0.0.1",
+  })
+  .option("path", {
+    describe: "HTTP MCP endpoint path when using --transport http.",
+    type: "string",
+    default: "/mcp",
+  })
+  .option("allowed-hosts", {
+    describe: "Comma-separated Host header allowlist for DNS rebinding protection (recommended with --host 0.0.0.0).",
+    type: "string",
+  })
+  .option("http-stateless", {
+    describe: "Use stateless HTTP mode (POST only, one server per request). Simpler for load-balanced deployments.",
+    type: "boolean",
+    default: false,
+  })
   .help()
   .parseSync();
 
@@ -97,6 +145,58 @@ function getAzureDevOpsClient(getAzureDevOpsToken: () => Promise<string>, userAg
   };
 }
 
+async function configureAuthentication(authType: string, tenantId: string | undefined): Promise<() => Promise<string>> {
+  const authenticator = createAuthenticator(authType, tenantId);
+
+  if (authType === "ntlm") {
+    const credentials = readNtlmCredentialsFromEnvironment();
+    installNtlmFetchInterceptor(credentials);
+    await authenticator();
+    logger.info("NTLM authentication configured", {
+      username: credentials.domain ? `${credentials.domain}\\${credentials.username}` : credentials.username,
+      ntlmImplementation: "@node-ntlm/axios",
+    });
+  }
+
+  if (authType === "pat") {
+    const basicValue = await authenticator();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.headers) {
+        const headers = new Headers(init.headers as HeadersInit);
+        if (headers.get("Authorization")?.startsWith("Bearer ")) {
+          headers.set("Authorization", `Basic ${basicValue}`);
+          init = { ...init, headers };
+        }
+      }
+      return originalFetch(input, init);
+    };
+    logger.debug("PAT mode: global fetch interceptor installed to rewrite Bearer -> Basic auth headers");
+  }
+
+  return authenticator;
+}
+
+async function createConfiguredServer(authenticator: () => Promise<string>, userAgentComposer: UserAgentComposer): Promise<McpServer> {
+  const server = new McpServer({
+    name: "Azure DevOps MCP Server",
+    version: packageVersion,
+    icons: [
+      {
+        src: "https://cdn.vsassets.io/content/icons/favicon.ico",
+      },
+    ],
+  });
+
+  server.server.oninitialized = () => {
+    userAgentComposer.appendMcpClientInfo(server.server.getClientVersion());
+  };
+
+  configureAllTools(server, authenticator, getAzureDevOpsClient(authenticator, userAgentComposer, argv.authentication), () => userAgentComposer.userAgent, enabledDomains);
+
+  return server;
+}
+
 async function main() {
   logger.info("Starting Azure DevOps MCP Server", {
     organization: orgName,
@@ -105,6 +205,7 @@ async function main() {
     tenant: argv.tenant,
     domains: argv.domains,
     enabledDomains: Array.from(enabledDomains),
+    transport: argv.transport,
     version: packageVersion,
     isCodespace: isGitHubCodespaceEnv(),
     isAzureDevOpsServices: isAzureDevOpsServicesUrl(orgUrl),
@@ -116,55 +217,35 @@ async function main() {
     });
   }
 
-  const server = new McpServer({
-    name: "Azure DevOps MCP Server",
-    version: packageVersion,
-    icons: [
-      {
-        src: "https://cdn.vsassets.io/content/icons/favicon.ico",
-      },
-    ],
-  });
-
   const userAgentComposer = new UserAgentComposer(packageVersion);
-  server.server.oninitialized = () => {
-    userAgentComposer.appendMcpClientInfo(server.server.getClientVersion());
-  };
   const tenantId = (await getOrgTenant(orgName)) ?? argv.tenant;
-  const authenticator = createAuthenticator(argv.authentication, tenantId);
+  const authenticator = await configureAuthentication(argv.authentication, tenantId);
 
-  if (argv.authentication === "ntlm") {
-    const credentials = readNtlmCredentialsFromEnvironment();
-    installNtlmFetchInterceptor(credentials);
-    await authenticator();
-    logger.info("NTLM authentication configured", {
-      username: credentials.domain ? `${credentials.domain}\\${credentials.username}` : credentials.username,
-      ntlmImplementation: "@node-ntlm/axios",
+  if (argv.transport === "http") {
+    const allowedHosts = argv["allowed-hosts"]
+      ?.split(",")
+      .map((host) => host.trim())
+      .filter(Boolean);
+
+    if ((argv.host === "0.0.0.0" || argv.host === "::") && !allowedHosts?.length) {
+      logger.warn("HTTP server binding to all interfaces without --allowed-hosts. Consider restricting allowed hosts before exposing publicly.");
+    }
+
+    await startHttpTransport({
+      host: argv.host as string,
+      port: argv.port as number,
+      httpsPort: argv["https-port"] as number,
+      tlsCertPath: argv["tls-cert"] as string | undefined,
+      tlsKeyPath: argv["tls-key"] as string | undefined,
+      path: argv.path as string,
+      allowedHosts,
+      stateless: argv["http-stateless"] as boolean,
+      createServer: () => createConfiguredServer(authenticator, userAgentComposer),
     });
+    return;
   }
 
-  if (argv.authentication === "pat") {
-    const basicValue = await authenticator();
-    // basicValue is already base64("{email}:{token}") — use it directly in the Authorization header
-    const _originalFetch = globalThis.fetch;
-    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.headers) {
-        const headers = new Headers(init.headers as HeadersInit);
-        if (headers.get("Authorization")?.startsWith("Bearer ")) {
-          headers.set("Authorization", `Basic ${basicValue}`);
-          init = { ...init, headers };
-        }
-      }
-      return _originalFetch(input, init);
-    };
-    logger.debug("PAT mode: global fetch interceptor installed to rewrite Bearer -> Basic auth headers");
-  }
-
-  // removing prompts until further notice
-  // configurePrompts(server);
-
-  configureAllTools(server, authenticator, getAzureDevOpsClient(authenticator, userAgentComposer, argv.authentication), () => userAgentComposer.userAgent, enabledDomains);
-
+  const server = await createConfiguredServer(authenticator, userAgentComposer);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

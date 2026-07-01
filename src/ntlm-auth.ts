@@ -54,10 +54,10 @@ export function readNtlmCredentialsFromEnvironment(): NtlmCredentials {
   const password = process.env["ADO_MCP_PASSWORD"];
 
   if (!usernameRaw) {
-    throw new Error("NTLM auth requires ADO_MCP_USERNAME (for example ESRISA\\your.user).");
+    throw new Error("NTLM auth requires ADO_MCP_USERNAME (for example DOMAIN\\your.user). Set it in the environment or in a .env file (see .env.sample).");
   }
   if (!password) {
-    throw new Error("NTLM auth requires ADO_MCP_PASSWORD with your domain password.");
+    throw new Error("NTLM auth requires ADO_MCP_PASSWORD with your domain password. Set it in the environment or in a .env file (see .env.sample).");
   }
 
   const { domain, username } = parseDomainUsername(usernameRaw);
