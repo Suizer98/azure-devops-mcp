@@ -34,7 +34,11 @@ type NtlmRequestHandler = {
 
 const NTLM_REQUEST_TIMEOUT_MS = 30_000;
 
-let sharedNtlmAxiosClient: AxiosInstance | undefined;
+const ntlmAxiosClients = new Map<string, AxiosInstance>();
+
+function credentialsCacheKey(credentials: NtlmCredentials): string {
+  return `${credentials.domain}|${credentials.username}|${credentials.password}|${credentials.workstation}`;
+}
 
 export function parseDomainUsername(value: string): { domain: string; username: string } {
   const slashIndex = value.indexOf("\\");
@@ -88,10 +92,13 @@ function createNtlmAxiosClient(credentials: NtlmCredentials): AxiosInstance {
 }
 
 function getNtlmAxiosClient(credentials: NtlmCredentials): AxiosInstance {
-  if (!sharedNtlmAxiosClient) {
-    sharedNtlmAxiosClient = createNtlmAxiosClient(credentials);
+  const cacheKey = credentialsCacheKey(credentials);
+  let client = ntlmAxiosClients.get(cacheKey);
+  if (!client) {
+    client = createNtlmAxiosClient(credentials);
+    ntlmAxiosClients.set(cacheKey, client);
   }
-  return sharedNtlmAxiosClient;
+  return client;
 }
 
 function resolveFetchUrl(input: RequestInfo | URL): string {
@@ -241,7 +248,10 @@ function axiosErrorToFetchResponse(error: unknown): Response {
 }
 
 export function installNtlmFetchInterceptor(credentials: NtlmCredentials): void {
-  const client = getNtlmAxiosClient(credentials);
+  installNtlmFetchInterceptorFromContext(() => credentials);
+}
+
+export function installNtlmFetchInterceptorFromContext(getCredentials: () => NtlmCredentials | undefined): void {
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -250,6 +260,12 @@ export function installNtlmFetchInterceptor(credentials: NtlmCredentials): void 
       return originalFetch(input, init);
     }
 
+    const credentials = getCredentials();
+    if (!credentials) {
+      throw new Error("NTLM credentials are not available for this request.");
+    }
+
+    const client = getNtlmAxiosClient(credentials);
     const method = (init?.method ?? "GET").toUpperCase();
     const additionalHeaders = headersToRecord(init?.headers);
     const body = typeof init?.body === "string" ? init.body : init?.body ? String(init.body) : undefined;

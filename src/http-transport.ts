@@ -13,6 +13,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { Request, Response } from "express";
 
 import { logger } from "./logger.js";
+import { readNtlmCredentialsFromHeaders, runWithNtlmCredentialsAsync } from "./request-context.js";
 
 export interface HttpTransportOptions {
   host: string;
@@ -26,51 +27,86 @@ export interface HttpTransportOptions {
   createServer: () => Promise<McpServer>;
 }
 
+function sendAuthError(res: Response, error: unknown): void {
+  const message = error instanceof Error ? error.message : "Authentication required";
+  res.status(401).json({
+    jsonrpc: "2.0",
+    error: { code: -32001, message },
+    id: null,
+  });
+}
+
 async function handleStatelessRequest(req: Request, res: Response, createServer: () => Promise<McpServer>): Promise<void> {
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
+  let credentials;
+  try {
+    credentials = readNtlmCredentialsFromHeaders(req.headers);
+  } catch (error) {
+    sendAuthError(res, error);
+    return;
+  }
+
+  await runWithNtlmCredentialsAsync(credentials, async () => {
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+
+    const server = await createServer();
+
+    res.on("close", () => {
+      void transport.close();
+      void server.close();
+    });
+
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
   });
-
-  const server = await createServer();
-
-  res.on("close", () => {
-    void transport.close();
-    void server.close();
-  });
-
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
 }
 
 async function handleStatefulRequest(req: Request, res: Response, sessions: Map<string, StreamableHTTPServerTransport>, createServer: () => Promise<McpServer>): Promise<void> {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
+  const runWithRequestCredentials = async (handler: () => Promise<void>) => {
+    let credentials;
+    try {
+      credentials = readNtlmCredentialsFromHeaders(req.headers);
+    } catch (error) {
+      sendAuthError(res, error);
+      return;
+    }
+
+    await runWithNtlmCredentialsAsync(credentials, handler);
+  };
+
   if (sessionId && sessions.has(sessionId)) {
     const transport = sessions.get(sessionId)!;
-    await transport.handleRequest(req, res, req.body);
+    await runWithRequestCredentials(async () => {
+      await transport.handleRequest(req, res, req.body);
+    });
     return;
   }
 
   if (!sessionId && req.method === "POST" && isInitializeRequest(req.body)) {
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (id) => {
-        sessions.set(id, transport);
-        logger.info("MCP session initialized", { sessionId: id, activeSessions: sessions.size });
-      },
+    await runWithRequestCredentials(async () => {
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (id) => {
+          sessions.set(id, transport);
+          logger.info("MCP session initialized", { sessionId: id, activeSessions: sessions.size });
+        },
+      });
+
+      transport.onclose = () => {
+        if (transport.sessionId) {
+          sessions.delete(transport.sessionId);
+          logger.info("MCP session closed", { sessionId: transport.sessionId, activeSessions: sessions.size });
+        }
+      };
+
+      const server = await createServer();
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
     });
-
-    transport.onclose = () => {
-      if (transport.sessionId) {
-        sessions.delete(transport.sessionId);
-        logger.info("MCP session closed", { sessionId: transport.sessionId, activeSessions: sessions.size });
-      }
-    };
-
-    const server = await createServer();
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
     return;
   }
 
@@ -143,6 +179,7 @@ export async function startHttpTransport(options: HttpTransportOptions): Promise
         mode: stateless ? "stateless" : "stateful",
         url: `http://${displayHost}:${port}${path}`,
         healthUrl: `http://${displayHost}:${port}/health`,
+        auth: "X-ADO-MCP-Username and X-ADO-MCP-Password headers from client",
       });
       resolve();
     });
@@ -169,6 +206,7 @@ export async function startHttpTransport(options: HttpTransportOptions): Promise
         mode: stateless ? "stateless" : "stateful",
         url: `https://${displayHost}:${httpsPort}${path}`,
         healthUrl: `https://${displayHost}:${httpsPort}/health`,
+        auth: "X-ADO-MCP-Username and X-ADO-MCP-Password headers from client",
       });
       resolve();
     });

@@ -21,7 +21,8 @@ import { UserAgentComposer } from "./useragent.js";
 import { packageVersion } from "./version.js";
 import { DomainsManager } from "./shared/domains.js";
 import { resolveOrganizationConfig, isAzureDevOpsServicesUrl } from "./utils.js";
-import { installNtlmFetchInterceptor, readNtlmCredentialsFromEnvironment, createNtlmAuthHandler } from "./ntlm-auth.js";
+import { installNtlmFetchInterceptor, installNtlmFetchInterceptorFromContext, readNtlmCredentialsFromEnvironment, createNtlmAuthHandler, type NtlmCredentials } from "./ntlm-auth.js";
+import { getCurrentNtlmCredentials } from "./request-context.js";
 
 function isGitHubCodespaceEnv(): boolean {
   return process.env.CODESPACES === "true" && !!process.env.CODESPACE_NAME;
@@ -120,10 +121,18 @@ export const orgUrl = organizationConfig.organizationUrl;
 const domainsManager = new DomainsManager(argv.domains);
 export const enabledDomains = domainsManager.getEnabledDomains();
 
+function getNtlmCredentialsForRequest(): NtlmCredentials {
+  const fromRequest = getCurrentNtlmCredentials();
+  if (fromRequest) {
+    return fromRequest;
+  }
+  return readNtlmCredentialsFromEnvironment();
+}
+
 function getAzureDevOpsClient(getAzureDevOpsToken: () => Promise<string>, userAgentComposer: UserAgentComposer, authType: string): () => Promise<WebApi> {
   return async () => {
     if (authType === "ntlm") {
-      const credentials = readNtlmCredentialsFromEnvironment();
+      const credentials = getNtlmCredentialsForRequest();
       const authHandler = createNtlmAuthHandler(credentials);
       return new WebApi(orgUrl, authHandler, undefined, {
         productName: "AzureDevOps.MCP",
@@ -145,17 +154,22 @@ function getAzureDevOpsClient(getAzureDevOpsToken: () => Promise<string>, userAg
   };
 }
 
-async function configureAuthentication(authType: string, tenantId: string | undefined): Promise<() => Promise<string>> {
+async function configureAuthentication(authType: string, tenantId: string | undefined, transport: string): Promise<() => Promise<string>> {
   const authenticator = createAuthenticator(authType, tenantId);
 
   if (authType === "ntlm") {
-    const credentials = readNtlmCredentialsFromEnvironment();
-    installNtlmFetchInterceptor(credentials);
-    await authenticator();
-    logger.info("NTLM authentication configured", {
-      username: credentials.domain ? `${credentials.domain}\\${credentials.username}` : credentials.username,
-      ntlmImplementation: "@node-ntlm/axios",
-    });
+    if (transport === "http") {
+      installNtlmFetchInterceptorFromContext(getCurrentNtlmCredentials);
+      logger.info("NTLM authentication configured for HTTP transport (credentials from client headers per request)");
+    } else {
+      const credentials = readNtlmCredentialsFromEnvironment();
+      installNtlmFetchInterceptor(credentials);
+      await authenticator();
+      logger.info("NTLM authentication configured", {
+        username: credentials.domain ? `${credentials.domain}\\${credentials.username}` : credentials.username,
+        ntlmImplementation: "@node-ntlm/axios",
+      });
+    }
   }
 
   if (authType === "pat") {
@@ -219,7 +233,7 @@ async function main() {
 
   const userAgentComposer = new UserAgentComposer(packageVersion);
   const tenantId = (await getOrgTenant(orgName)) ?? argv.tenant;
-  const authenticator = await configureAuthentication(argv.authentication, tenantId);
+  const authenticator = await configureAuthentication(argv.authentication, tenantId, argv.transport as string);
 
   if (argv.transport === "http") {
     const allowedHosts = argv["allowed-hosts"]

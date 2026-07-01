@@ -28,7 +28,7 @@ Under cursor MCP settings, add:
     "type": "stdio",
     "command": "node",
     "args": [
-        "C:\\Esri\\azure-devops-mcp\\dist\\index.js",
+        "C:\\azure-devops-mcp\\dist\\index.js",
         "TEST",
         "-a",
         "pat",
@@ -50,32 +50,37 @@ $env:PERSONAL_ACCESS_TOKEN = [Convert]::ToBase64String([Text.Encoding]::UTF8.Get
 
 ## Remote HTTP hosting (Copilot Studio / M365)
 
-Copy `.env.sample` to `.env` and set NTLM credentials (or PAT). The server loads `.env` from the project root on startup.
+Start the server without server-side credentials — each Cursor user passes their own NTLM username and password via HTTP headers:
 
 ```powershell
-copy .env.sample .env
-# edit .env — set ADO_MCP_USERNAME and ADO_MCP_PASSWORD
-
-node dist/index.js PUB -a ntlm --server-url https://devops.esrisa.com/PUB `
+node dist/index.js TEST -a ntlm --server-url https://devops.suizer.com/TEST `
   --transport http --host 127.0.0.1 --port 8000 --path /mcp
 ```
 
 HTTP listens on port **8000** by default. HTTPS listens on port **8080** when `--tls-cert` and `--tls-key` are provided. Alternatively, terminate TLS in IIS/nginx and forward to `http://localhost:8000/mcp`.
 
-### Cursor `mcp.json` (HTTP)
+### Cursor `mcp.json` (HTTP, per-user NTLM)
 
-Start the server first (command above), then add to `~/.cursor/mcp.json`:
+Start the server first (command above), then each user adds to `~/.cursor/mcp.json`:
 
 ```json
 "ado": {
   "type": "http",
-  "url": "http://localhost:8000/mcp"
+  "url": "http://localhost:8000/mcp",
+  "headers": {
+    "X-ADO-MCP-Username": "DOMAIN\\your.user",
+    "X-ADO-MCP-Password": "your-domain-password"
+  }
 }
 ```
 
-Use a port that is not already taken by another local MCP server. Credentials stay in `.env` on the server process — nothing sensitive is needed in `mcp.json`.
+Use plain strings for username and password. `${env:...}` interpolation in `headers` does not work reliably in Cursor today, so put the values directly in `mcp.json`.
 
-In Copilot Studio: Tools → Add tool → Model Context Protocol → enter the public HTTPS URL (e.g. `https://www.gerisa.com/ado/mcp` or your reverse-proxy URL).
+Keep `~/.cursor/mcp.json` private (it is not in your git repo). For a shared remote server, use HTTPS so credentials are not sent in clear text.
+
+For local stdio mode, use `env` instead of `headers` — see the stdio example above.
+
+In Copilot Studio: Tools → Add tool → Model Context Protocol → enter the public HTTPS URL (e.g. `https://www.suizer.com/ado/mcp` or your reverse-proxy URL).
 
 Options:
 

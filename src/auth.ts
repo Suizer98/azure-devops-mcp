@@ -6,6 +6,7 @@ import { AccountInfo, AuthenticationResult, PublicClientApplication } from "@azu
 import open from "open";
 import { logger } from "./logger.js";
 import { readNtlmCredentialsFromEnvironment } from "./ntlm-auth.js";
+import { getCurrentNtlmCredentials } from "./request-context.js";
 
 const scopes = ["499b84ac-1321-427f-aa17-267ca6975798/.default"];
 
@@ -96,7 +97,7 @@ function createAuthenticator(type: string, tenantId?: string): () => Promise<str
     case "ntlm":
       logger.debug(`Authenticator: Using NTLM authentication for on-prem domain credentials`);
       return async () => {
-        const credentials = readNtlmCredentialsFromEnvironment();
+        const credentials = getCurrentNtlmCredentials() ?? readNtlmCredentialsFromEnvironment();
         logger.debug(`${type}: Loaded NTLM credentials`, {
           username: credentials.domain ? `${credentials.domain}\\${credentials.username}` : credentials.username,
         });
