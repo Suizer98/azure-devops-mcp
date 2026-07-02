@@ -48,20 +48,16 @@ The PAT value need to base64 converted, you may copy value from:
 $env:PERSONAL_ACCESS_TOKEN = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("${email}:${token}"))
 ```
 
-## Remote HTTP hosting (Copilot Studio / M365)
+## Remote HTTP hosting
 
-Start the server without server-side credentials — each Cursor user passes their own NTLM username and password via HTTP headers:
+Each user sends their own NTLM credentials via HTTP headers. No server-side `.env` needed for HTTP mode.
 
 ```powershell
 node dist/index.js TEST -a ntlm --server-url https://devops.suizer.com/TEST `
   --transport http --host 127.0.0.1 --port 8000 --path /mcp
 ```
 
-HTTP listens on port **8000** by default. HTTPS listens on port **8080** when `--tls-cert` and `--tls-key` are provided. Alternatively, terminate TLS in IIS/nginx and forward to `http://localhost:8000/mcp`.
-
-### Cursor `mcp.json` (HTTP, per-user NTLM)
-
-Start the server first (command above), then each user adds to `~/.cursor/mcp.json`:
+`~/.cursor/mcp.json`:
 
 ```json
 "ado": {
@@ -74,13 +70,22 @@ Start the server first (command above), then each user adds to `~/.cursor/mcp.js
 }
 ```
 
-Use plain strings for username and password. `${env:...}` interpolation in `headers` does not work reliably in Cursor today, so put the values directly in `mcp.json`.
+Use plain strings in `headers`. Keep `mcp.json` private. Use HTTPS when the server is not on localhost.
 
-Keep `~/.cursor/mcp.json` private (it is not in your git repo). For a shared remote server, use HTTPS so credentials are not sent in clear text.
+For Copilot Studio or IIS, point to the public hosted HTTPS URL.
 
-For local stdio mode, use `env` instead of `headers` — see the stdio example above.
+### Test with free tier Ngrok
 
-In Copilot Studio: Tools → Add tool → Model Context Protocol → enter the public HTTPS URL (e.g. `https://www.suizer.com/ado/mcp` or your reverse-proxy URL).
+Terminal 1:
+
+```powershell
+node dist/index.js TEST -a ntlm --server-url https://devops.suizer.com/TEST `
+  --transport http --host 0.0.0.0 --port 8000 --path /mcp
+```
+
+Terminal 2: `ngrok http 8000`
+
+Set `"url"` in `mcp.json` to the ngrok HTTPS URL + `/mcp`. Use `--host 0.0.0.0` so any ngrok hostname works (free URLs change each restart). If your ngrok URL changed — restart with `0.0.0.0` or update `--allowed-hosts`.
 
 Options:
 
