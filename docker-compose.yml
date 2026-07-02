@@ -1,0 +1,21 @@
+services:
+  ado-mcp:
+    build: .
+    ports:
+      - "${ADO_MCP_PORT:-8000}:8000"
+    environment:
+      AZURE_DEVOPS_SERVER_URL: ${AZURE_DEVOPS_SERVER_URL:?Set AZURE_DEVOPS_SERVER_URL in .env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    command:
+      - "${ADO_MCP_ORGANIZATION:-_}"
+      - "-a"
+      - "${ADO_MCP_AUTH:-ntlm}"
+      - "--transport"
+      - "http"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--path"
+      - "/mcp"
+    restart: unless-stopped
