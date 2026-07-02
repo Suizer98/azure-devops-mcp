@@ -54,5 +54,7 @@ module.exports = {
     "^(.+)/elicitations\\.js$": "$1/elicitations.ts",
     "^(.+)/content-safety\\.js$": "$1/content-safety.ts",
     "^(.+)/index\\.js$": "$1/index.ts",
+    "^(.+)/ntlm-auth\\.js$": "$1/ntlm-auth.ts",
+    "^(.+)/request-context\\.js$": "$1/request-context.ts",
   },
 };

@@ -13,7 +13,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { Request, Response } from "express";
 
 import { logger } from "./logger.js";
-import { readNtlmCredentialsFromHeaders, runWithNtlmCredentialsAsync } from "./request-context.js";
+import { readRequestScopeFromHeaders, runWithRequestScopeAsync, clearSessionCollection } from "./request-context.js";
 
 export interface HttpTransportOptions {
   host: string;
@@ -37,15 +37,15 @@ function sendAuthError(res: Response, error: unknown): void {
 }
 
 async function handleStatelessRequest(req: Request, res: Response, createServer: () => Promise<McpServer>): Promise<void> {
-  let credentials;
+  let scope;
   try {
-    credentials = readNtlmCredentialsFromHeaders(req.headers);
+    scope = readRequestScopeFromHeaders(req.headers);
   } catch (error) {
     sendAuthError(res, error);
     return;
   }
 
-  await runWithNtlmCredentialsAsync(credentials, async () => {
+  await runWithRequestScopeAsync(scope, async () => {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
@@ -66,28 +66,32 @@ async function handleStatelessRequest(req: Request, res: Response, createServer:
 async function handleStatefulRequest(req: Request, res: Response, sessions: Map<string, StreamableHTTPServerTransport>, createServer: () => Promise<McpServer>): Promise<void> {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
-  const runWithRequestCredentials = async (handler: () => Promise<void>) => {
-    let credentials;
+  const runWithRequestScope = async (handler: () => Promise<void>) => {
+    let scope;
     try {
-      credentials = readNtlmCredentialsFromHeaders(req.headers);
+      scope = readRequestScopeFromHeaders(req.headers);
     } catch (error) {
       sendAuthError(res, error);
       return;
     }
 
-    await runWithNtlmCredentialsAsync(credentials, handler);
+    if (sessionId) {
+      scope.sessionId = sessionId;
+    }
+
+    await runWithRequestScopeAsync(scope, handler);
   };
 
   if (sessionId && sessions.has(sessionId)) {
     const transport = sessions.get(sessionId)!;
-    await runWithRequestCredentials(async () => {
+    await runWithRequestScope(async () => {
       await transport.handleRequest(req, res, req.body);
     });
     return;
   }
 
   if (!sessionId && req.method === "POST" && isInitializeRequest(req.body)) {
-    await runWithRequestCredentials(async () => {
+    await runWithRequestScope(async () => {
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
@@ -98,6 +102,7 @@ async function handleStatefulRequest(req: Request, res: Response, sessions: Map<
 
       transport.onclose = () => {
         if (transport.sessionId) {
+          clearSessionCollection(transport.sessionId);
           sessions.delete(transport.sessionId);
           logger.info("MCP session closed", { sessionId: transport.sessionId, activeSessions: sessions.size });
         }
@@ -179,7 +184,7 @@ export async function startHttpTransport(options: HttpTransportOptions): Promise
         mode: stateless ? "stateless" : "stateful",
         url: `http://${displayHost}:${port}${path}`,
         healthUrl: `http://${displayHost}:${port}/health`,
-        auth: "X-ADO-MCP-Username and X-ADO-MCP-Password headers from client",
+        auth: "X-ADO-MCP-Username, X-ADO-MCP-Password, optional X-ADO-MCP-Collection",
       });
       resolve();
     });
@@ -206,7 +211,7 @@ export async function startHttpTransport(options: HttpTransportOptions): Promise
         mode: stateless ? "stateless" : "stateful",
         url: `https://${displayHost}:${httpsPort}${path}`,
         healthUrl: `https://${displayHost}:${httpsPort}/health`,
-        auth: "X-ADO-MCP-Username and X-ADO-MCP-Password headers from client",
+        auth: "X-ADO-MCP-Username, X-ADO-MCP-Password, optional X-ADO-MCP-Collection",
       });
       resolve();
     });

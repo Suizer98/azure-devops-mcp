@@ -159,26 +159,76 @@ function collectionUrlFromPageUrl(url: string): string {
   return normalizeOrganizationUrl(`${parsed.origin}/${collectionSegment}`);
 }
 
-export function resolveOrganizationConfig(organization: string, serverUrlOverride?: string): { organizationName: string; organizationUrl: string } {
+function getCollectionSegmentFromUrl(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const segment = u.pathname.split("/").filter(Boolean)[0];
+    return segment ? decodeURIComponent(segment) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getServerBaseUrl(url: string): string {
+  return normalizeOrganizationUrl(new URL(url).origin);
+}
+
+export function buildCollectionUrl(serverBaseUrl: string, collection: string): string {
+  return `${normalizeOrganizationUrl(serverBaseUrl)}/${collection}`;
+}
+
+export function resolveOrganizationConfig(
+  organization: string,
+  serverUrlOverride?: string
+): {
+  organizationName: string;
+  organizationUrl: string;
+  serverBaseUrl: string;
+  defaultCollection: string;
+} {
   const explicitServerUrl = serverUrlOverride?.trim() || process.env.AZURE_DEVOPS_SERVER_URL?.trim();
   if (explicitServerUrl) {
-    const organizationUrl = organization.startsWith("http://") || organization.startsWith("https://") ? collectionUrlFromPageUrl(organization) : normalizeOrganizationUrl(explicitServerUrl);
-    const organizationName = getOrgFromUrl(organizationUrl) ?? getCollectionNameFromUrl(organizationUrl) ?? organization;
-    return { organizationName, organizationUrl };
+    const normalizedUrl = organization.startsWith("http://") || organization.startsWith("https://") ? collectionUrlFromPageUrl(organization) : normalizeOrganizationUrl(explicitServerUrl);
+    if (isAzureDevOpsServicesUrl(normalizedUrl)) {
+      const organizationName = getOrgFromUrl(normalizedUrl) ?? getCollectionNameFromUrl(normalizedUrl) ?? organization;
+      return {
+        organizationName,
+        organizationUrl: normalizedUrl,
+        serverBaseUrl: normalizedUrl,
+        defaultCollection: organizationName,
+      };
+    }
+
+    const collectionFromUrl = getCollectionSegmentFromUrl(normalizedUrl);
+    const serverBaseUrl = getServerBaseUrl(normalizedUrl);
+    const defaultCollection = collectionFromUrl ?? (organization === "_" || organization === "-" ? "" : organization);
+    return {
+      organizationName: defaultCollection ? defaultCollection.toLowerCase() : "",
+      organizationUrl: defaultCollection ? buildCollectionUrl(serverBaseUrl, defaultCollection) : serverBaseUrl,
+      serverBaseUrl,
+      defaultCollection,
+    };
   }
 
   if (organization.startsWith("http://") || organization.startsWith("https://")) {
     const organizationUrl = collectionUrlFromPageUrl(organization);
-    const organizationName = getOrgFromUrl(organizationUrl) ?? getCollectionNameFromUrl(organizationUrl);
-    if (!organizationName) {
-      throw new Error(`Could not determine organization from URL: ${organization}`);
-    }
-    return { organizationName, organizationUrl };
+    const collectionFromUrl = getCollectionSegmentFromUrl(organizationUrl);
+    const serverBaseUrl = getServerBaseUrl(organizationUrl);
+    const defaultCollection = collectionFromUrl ?? organization;
+    return {
+      organizationName: defaultCollection.toLowerCase(),
+      organizationUrl: buildCollectionUrl(serverBaseUrl, defaultCollection),
+      serverBaseUrl,
+      defaultCollection,
+    };
   }
 
+  const organizationUrl = normalizeOrganizationUrl(`https://dev.azure.com/${organization}`);
   return {
     organizationName: organization,
-    organizationUrl: normalizeOrganizationUrl(`https://dev.azure.com/${organization}`),
+    organizationUrl,
+    serverBaseUrl: organizationUrl,
+    defaultCollection: organization,
   };
 }
 

@@ -22,7 +22,7 @@ import { packageVersion } from "./version.js";
 import { DomainsManager } from "./shared/domains.js";
 import { resolveOrganizationConfig, isAzureDevOpsServicesUrl } from "./utils.js";
 import { installNtlmFetchInterceptor, installNtlmFetchInterceptorFromContext, readNtlmCredentialsFromEnvironment, createNtlmAuthHandler, type NtlmCredentials } from "./ntlm-auth.js";
-import { getCurrentNtlmCredentials } from "./request-context.js";
+import { getCurrentNtlmCredentials, getConnectionUrl, initializeOrganizationSettings } from "./request-context.js";
 
 function isGitHubCodespaceEnv(): boolean {
   return process.env.CODESPACES === "true" && !!process.env.CODESPACE_NAME;
@@ -115,6 +115,10 @@ const argv = yargs(hideBin(process.argv))
   .parseSync();
 
 const organizationConfig = resolveOrganizationConfig(argv.organization as string, argv["server-url"] as string | undefined);
+initializeOrganizationSettings({
+  defaultCollection: organizationConfig.defaultCollection,
+  serverBaseUrl: organizationConfig.serverBaseUrl,
+});
 export const orgName = organizationConfig.organizationName;
 export const orgUrl = organizationConfig.organizationUrl;
 
@@ -131,11 +135,12 @@ function getNtlmCredentialsForRequest(): NtlmCredentials {
 
 function getAzureDevOpsClient(getAzureDevOpsToken: () => Promise<string>, userAgentComposer: UserAgentComposer, authType: string): () => Promise<WebApi> {
   return async () => {
+    const collectionUrl = getConnectionUrl();
     if (authType === "ntlm") {
       const credentials = getNtlmCredentialsForRequest();
       const authHandler = createNtlmAuthHandler(credentials);
-      return new WebApi(orgUrl, authHandler, undefined, {
-        productName: "AzureDevOps.MCP",
+      return new WebApi(collectionUrl, authHandler, undefined, {
+        productName: "Azure DevOps.MCP",
         productVersion: packageVersion,
         userAgent: userAgentComposer.userAgent,
       });
@@ -145,7 +150,7 @@ function getAzureDevOpsClient(getAzureDevOpsToken: () => Promise<string>, userAg
     // For pat, accessToken is base64("{email}:{token}"). Decode to extract the token part,
     // since getPersonalAccessTokenHandler prepends ":" internally and just needs the raw token.
     const authHandler = authType === "pat" ? getPersonalAccessTokenHandler(Buffer.from(accessToken, "base64").toString("utf8").split(":").slice(1).join(":")) : getBearerHandler(accessToken);
-    const connection = new WebApi(orgUrl, authHandler, undefined, {
+    const connection = new WebApi(collectionUrl, authHandler, undefined, {
       productName: "AzureDevOps.MCP",
       productVersion: packageVersion,
       userAgent: userAgentComposer.userAgent,
@@ -214,6 +219,8 @@ async function createConfiguredServer(authenticator: () => Promise<string>, user
 async function main() {
   logger.info("Starting Azure DevOps MCP Server", {
     organization: orgName,
+    defaultCollection: organizationConfig.defaultCollection,
+    serverBaseUrl: organizationConfig.serverBaseUrl,
     organizationUrl: orgUrl,
     authentication: argv.authentication,
     tenant: argv.tenant,

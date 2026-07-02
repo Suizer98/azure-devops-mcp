@@ -72,6 +72,29 @@ node dist/index.js TEST -a ntlm --server-url https://devops.suizer.com/TEST `
 
 Use plain strings in `headers`. Keep `mcp.json` private. Use HTTPS when the server is not on localhost.
 
+### No collection required at startup
+
+You do not need to specify a collection when starting the server. Pass `_` as the organization argument and point `--server-url` at the server root (not a collection URL such as `/PUB` or `/TEST`).
+
+```powershell
+node dist/index.js _ -a ntlm --server-url https://devops.esrisa.com `
+  --transport http --host 0.0.0.0 --port 8000 --path /mcp
+```
+
+The collection is chosen later, per client session. Optionally set `X-ADO-MCP-Collection` in `mcp.json`, or call `core_list_collections` (with a filter) or `core_set_collection` in the MCP session. Change the header value to switch collections (for example `DEPT1`, `DEPT2`).
+
+```json
+"ado": {
+  "type": "http",
+  "url": "http://localhost:8000/mcp",
+  "headers": {
+    "X-ADO-MCP-Username": "DOMAIN\\your.user",
+    "X-ADO-MCP-Password": "your-domain-password",
+    "X-ADO-MCP-Collection": "TEST"
+  }
+}
+```
+
 For Copilot Studio or IIS, point to the public hosted HTTPS URL.
 
 ### Test with free tier Ngrok
