@@ -74,7 +74,7 @@ Use plain strings in `headers`. Keep `mcp.json` private. Use HTTPS when the serv
 
 ### No collection required at startup
 
-You do not need to specify a collection when starting the server. Pass `_` as the organization argument and point `--server-url` at the server root (not a collection URL such as `/PUB` or `/TEST`).
+You do not need to specify a collection when starting the server. Pass `_` as the organization argument and point `--server-url` at the server root (not a collection URL such as `/TEST`).
 
 ```powershell
 node dist/index.js _ -a ntlm --server-url https://devops.esrisa.com `

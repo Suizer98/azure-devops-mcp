@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+import { createHash } from "node:crypto";
 import http from "node:http";
 import type { IncomingMessage, RequestOptions } from "node:http";
 import type { Url } from "node:url";
@@ -37,7 +38,12 @@ const NTLM_REQUEST_TIMEOUT_MS = 30_000;
 const ntlmAxiosClients = new Map<string, AxiosInstance>();
 
 function credentialsCacheKey(credentials: NtlmCredentials): string {
-  return `${credentials.domain}|${credentials.username}|${credentials.password}|${credentials.workstation}`;
+  const material = [credentials.domain, credentials.username, credentials.password, credentials.workstation].join("\0");
+  return createHash("sha256").update(material).digest("hex");
+}
+
+export function clearNtlmAxiosClientCache(): void {
+  ntlmAxiosClients.clear();
 }
 
 export function parseDomainUsername(value: string): { domain: string; username: string } {
@@ -169,7 +175,7 @@ function createHttpClientResponse(response: AxiosResponse<string>): NtlmHttpClie
 }
 
 class AxiosNtlmCredentialHandler implements NtlmRequestHandler {
-  constructor(private client: AxiosInstance) {}
+  constructor(private credentials: NtlmCredentials) {}
 
   prepareRequest(options: http.RequestOptions): void {
     if (options.agent) {
@@ -200,7 +206,7 @@ class AxiosNtlmCredentialHandler implements NtlmRequestHandler {
     });
 
     try {
-      const response = await this.client.request<string>({
+      const response = await getNtlmAxiosClient(this.credentials).request<string>({
         url,
         method,
         headers,
@@ -312,5 +318,5 @@ export function installNtlmFetchInterceptorFromContext(getCredentials: () => Ntl
 }
 
 export function createNtlmAuthHandler(credentials: NtlmCredentials): NtlmRequestHandler {
-  return new AxiosNtlmCredentialHandler(getNtlmAxiosClient(credentials));
+  return new AxiosNtlmCredentialHandler(credentials);
 }
