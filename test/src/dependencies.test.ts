@@ -33,7 +33,7 @@ function collectImportedPackages(): Set<string> {
       if (specifier.startsWith(".")) continue;
 
       const packageName = toPackageName(specifier);
-      if (builtins.has(packageName) || builtins.has(specifier)) continue;
+      if (builtins.has(packageName) || builtins.has(specifier) || specifier.startsWith("node:")) continue;
 
       packages.add(packageName);
     }

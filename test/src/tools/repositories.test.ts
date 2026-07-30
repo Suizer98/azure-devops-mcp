@@ -3,6 +3,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebApi } from "azure-devops-node-api";
+import { initializeOrganizationSettings } from "../../../src/request-context";
 import { configureRepoTools, REPO_TOOLS } from "../../../src/tools/repositories";
 import {
   PullRequestStatus,
@@ -23,7 +24,7 @@ jest.mock("../../../src/tools/auth", () => ({
 }));
 
 // Mock index.js to avoid yargs CLI parsing at import time
-jest.mock("../../../src/index", () => ({ orgName: "test-org" }));
+initializeOrganizationSettings({ defaultCollection: "test-org", serverBaseUrl: "https://dev.azure.com/test-org" });
 
 const mockGetCurrentUserDetails = getCurrentUserDetails as jest.MockedFunction<typeof getCurrentUserDetails>;
 const mockGetUserIdFromEmail = getUserIdFromEmail as jest.MockedFunction<typeof getUserIdFromEmail>;

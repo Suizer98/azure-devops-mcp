@@ -61,7 +61,13 @@ describe("tool registration", () => {
     expect(server.tool).toBe(tool);
     expect(server.registerTool).toBe(registerTool);
     await connect();
-    expect((await client.listTools()).tools.map(({ name }) => name).sort()).toEqual(["core_get_identity_ids", "core_list_project_teams", "core_list_projects"]);
+    expect((await client.listTools()).tools.map(({ name }) => name).sort()).toEqual([
+      "core_get_identity_ids",
+      "core_list_collections",
+      "core_list_project_teams",
+      "core_list_projects",
+      "core_set_collection",
+    ]);
   });
 
   it("wraps external responses registered through registerTool", async () => {

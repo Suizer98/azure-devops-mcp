@@ -10,6 +10,7 @@ import { Domain } from "./shared/domains.js";
 import { configureToolsWithAnnotations } from "./shared/tool-annotations.js";
 import { configureAdvSecTools } from "./tools/advanced-security.js";
 import { configurePipelineTools } from "./tools/pipelines.js";
+import { registerCustomCoreTools } from "./custom/tools.js";
 import { configureCoreTools } from "./tools/core.js";
 import { configureRepoTools } from "./tools/repositories.js";
 import { configureSearchTools } from "./tools/search.js";
@@ -26,7 +27,10 @@ function configureAllTools(server: McpServer, tokenProvider: () => Promise<strin
       }
     };
 
-    configureIfDomainEnabled(Domain.CORE, () => configureCoreTools(server, tokenProvider, connectionProvider, userAgentProvider));
+    configureIfDomainEnabled(Domain.CORE, () => {
+      configureCoreTools(server, tokenProvider, connectionProvider, userAgentProvider);
+      registerCustomCoreTools(server, connectionProvider);
+    });
     configureIfDomainEnabled(Domain.WORK, () => configureWorkTools(server, tokenProvider, connectionProvider));
     configureIfDomainEnabled(Domain.PIPELINES, () => configurePipelineTools(server, tokenProvider, connectionProvider, userAgentProvider));
     configureIfDomainEnabled(Domain.REPOSITORIES, () => configureRepoTools(server, tokenProvider, connectionProvider, userAgentProvider));

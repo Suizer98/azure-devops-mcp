@@ -7,7 +7,7 @@ import { getBearerHandler, getPersonalAccessTokenHandler, WebApi } from "azure-d
 import { startHttpTransport } from "../http-transport.js";
 import { logger } from "../logger.js";
 import { installNtlmFetchInterceptor, installNtlmFetchInterceptorFromContext, readNtlmCredentialsFromEnvironment, createNtlmAuthHandler, type NtlmCredentials } from "../ntlm-auth.js";
-import { getCurrentNtlmCredentials, getConnectionUrl } from "../request-context.js";
+import { getCurrentNtlmCredentials, getConnectionUrl, getServerBaseUrl } from "../request-context.js";
 import { configureAllTools } from "../tools.js";
 import { UserAgentComposer } from "../useragent.js";
 import { packageVersion } from "../version.js";
@@ -65,17 +65,32 @@ export async function configureCustomAuthentication(authType: string, tenantId: 
 
   if (authType === "pat") {
     const basicValue = await authenticator();
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.headers) {
-        const headers = new Headers(init.headers as HeadersInit);
-        if (headers.get("Authorization")?.startsWith("Bearer ")) {
-          headers.set("Authorization", `Basic ${basicValue}`);
-          init = { ...init, headers };
+    const serverBaseUrl = getServerBaseUrl();
+    if (isAzureDevOpsServicesUrl(serverBaseUrl)) {
+      const { installPatFetchInterceptor } = await import("../auth.js");
+      installPatFetchInterceptor(basicValue);
+    } else {
+      const allowedHost = new URL(serverBaseUrl).host.toLowerCase();
+      const patBearerValue = `Bearer ${basicValue}`;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+        if (headers.get("Authorization") !== patBearerValue) {
+          return originalFetch(input, init);
         }
-      }
-      return originalFetch(input, init);
-    };
+
+        const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
+        if (requestUrl.host.toLowerCase() !== allowedHost) {
+          throw new Error(`Refusing to send a Personal Access Token to untrusted destination '${requestUrl.origin}'`);
+        }
+
+        headers.set("Authorization", `Basic ${basicValue}`);
+        if (input instanceof Request) {
+          return originalFetch(new Request(input, { ...init, headers }));
+        }
+        return originalFetch(input, { ...init, headers });
+      };
+    }
     logger.debug("PAT mode: global fetch interceptor installed to rewrite Bearer -> Basic auth headers");
   }
 

@@ -28,7 +28,8 @@ import { getCurrentUserDetails, getUserIdFromEmail } from "./auth.js";
 import { GitRepository } from "azure-devops-node-api/interfaces/TfvcInterfaces.js";
 import { WebApiTagDefinition } from "azure-devops-node-api/interfaces/CoreInterfaces.js";
 import { extractAdoStreamError, getEnumKeys, streamToString, apiVersion } from "../utils.js";
-import { orgName } from "../index.js";
+import { getOrganizationName, getOrganizationUrl } from "../request-context.js";
+import { getSearchBaseUrl } from "../custom/organization.js";
 import { createExternalContentResponse } from "../shared/content-safety.js";
 
 const REPO_TOOLS = {
@@ -805,7 +806,7 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
     },
     async ({ searchText, project, repository, branch, author, commitStartDate, commitEndDate, orderBy, includeFacets, skip, top }) => {
       const accessToken = await tokenProvider();
-      const url = `https://almsearch.dev.azure.com/${orgName}/_apis/search/commitSearchResults?api-version=${apiVersion}`;
+      const url = `${getSearchBaseUrl(getOrganizationUrl(), getOrganizationName())}/_apis/search/commitSearchResults?api-version=${apiVersion}`;
 
       const requestBody: Record<string, unknown> = { searchText, includeFacets, $skip: skip, $top: top };
 

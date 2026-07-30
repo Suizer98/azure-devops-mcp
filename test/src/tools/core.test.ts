@@ -3,8 +3,11 @@
 
 import { describe, expect, it } from "@jest/globals";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { initializeOrganizationSettings } from "../../../src/request-context";
 import { configureCoreTools } from "../../../src/tools/core";
 import { WebApi } from "azure-devops-node-api";
+
+initializeOrganizationSettings({ defaultCollection: "test-org", serverBaseUrl: "https://dev.azure.com/test-org" });
 
 type TokenProviderMock = () => Promise<string>;
 type ConnectionProviderMock = () => Promise<WebApi>;

@@ -10,6 +10,7 @@ import { configureToolsWithAnnotations, TOOL_ANNOTATIONS } from "../../src/share
 import { extractToolNames } from "../../src/shared/tool-validation";
 
 const MUTATING_TOOL_NAMES = [
+  "core_set_collection",
   "pipelines_artifact",
   "pipelines_write",
   "repo_create_branch",
@@ -38,7 +39,7 @@ describe("tool annotations", () => {
       .flatMap((fileName) => extractToolNames(readFileSync(join(toolsDirectory, fileName), "utf8")))
       .sort();
 
-    expect(declaredNames).toHaveLength(44);
+    expect(declaredNames).toHaveLength(46);
     expect(declaredNames).toEqual(Object.keys(TOOL_ANNOTATIONS).sort());
   });
 
@@ -56,8 +57,8 @@ describe("tool annotations", () => {
     const registeredNames = registrations.map(([name]) => name).sort();
     const annotatedNames = Object.keys(TOOL_ANNOTATIONS).sort();
 
-    expect(registrations).toHaveLength(44);
-    expect(new Set(registeredNames).size).toBe(44);
+    expect(registrations).toHaveLength(46);
+    expect(new Set(registeredNames).size).toBe(46);
     expect(registeredNames).toEqual(annotatedNames);
 
     for (const [name, annotations] of registrations) {

@@ -9,12 +9,13 @@ import { BuildApi } from "azure-devops-node-api/BuildApi.js";
 import { GitApi } from "azure-devops-node-api/GitApi.js";
 import { WorkItemTrackingApi } from "azure-devops-node-api/WorkItemTrackingApi.js";
 import { z } from "zod";
+import { initializeOrganizationSettings } from "../../src/request-context";
 import { Domain } from "../../src/shared/domains";
 import { TOOL_ANNOTATIONS } from "../../src/shared/tool-annotations";
 import { dateInputSchema } from "../../src/shared/tool-schemas";
 import { configureAllTools } from "../../src/tools";
 
-jest.mock("../../src/index", () => ({ orgName: "test-org" }));
+initializeOrganizationSettings({ defaultCollection: "test-org", serverBaseUrl: "https://dev.azure.com/test-org" });
 
 describe("date input schema", () => {
   it.each([

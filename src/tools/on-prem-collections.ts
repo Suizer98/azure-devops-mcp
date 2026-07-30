@@ -8,9 +8,14 @@ import { z } from "zod";
 import { getCurrentCollection, getServerBaseUrl, setSessionCollection } from "../request-context.js";
 import { isAzureDevOpsServicesUrl } from "../custom/organization.js";
 
+const ON_PREM_TOOLS = {
+  set_collection: "core_set_collection",
+  list_collections: "core_list_collections",
+};
+
 function configureOnPremCollectionTools(server: McpServer, connectionProvider: () => Promise<WebApi>) {
   server.tool(
-    "core_set_collection",
+    ON_PREM_TOOLS.set_collection,
     "Set the active Azure DevOps Server collection for this session. Other tools use this collection until changed. On-prem only.",
     {
       collection: z.string().describe("Collection name, for example EsriSingapore or PUB."),
@@ -22,7 +27,7 @@ function configureOnPremCollectionTools(server: McpServer, connectionProvider: (
   );
 
   server.tool(
-    "core_list_collections",
+    ON_PREM_TOOLS.list_collections,
     "List Azure DevOps Server project collections. If collectionNameFilter matches exactly one collection, it becomes the active collection for this session. On-prem only.",
     {
       top: z.coerce.number().optional().describe("Maximum number of collections to return. Defaults to 1000."),

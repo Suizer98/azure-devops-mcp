@@ -3,7 +3,10 @@
 
 import { describe, expect, it, beforeEach, afterEach } from "@jest/globals";
 import { WebApi } from "azure-devops-node-api";
+import { initializeOrganizationSettings } from "../../../src/request-context";
 import { getCurrentUserDetails, getUserIdFromEmail, searchIdentities } from "../../../src/tools/auth";
+
+initializeOrganizationSettings({ defaultCollection: "test-org", serverBaseUrl: "https://dev.azure.com/test-org" });
 
 type TokenProviderMock = () => Promise<string>;
 type ConnectionProviderMock = () => Promise<WebApi>;
