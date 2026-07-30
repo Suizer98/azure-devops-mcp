@@ -8,6 +8,7 @@ import { Domain } from "./shared/domains.js";
 import { configureAdvSecTools } from "./tools/advanced-security.js";
 import { configureMcpAppsTools } from "./tools/mcp-apps.js";
 import { configurePipelineTools } from "./tools/pipelines.js";
+import { registerCustomCoreTools } from "./custom/tools.js";
 import { configureCoreTools } from "./tools/core.js";
 import { configureRepoTools } from "./tools/repositories.js";
 import { configureSearchTools } from "./tools/search.js";
@@ -23,7 +24,10 @@ function configureAllTools(server: McpServer, tokenProvider: () => Promise<strin
     }
   };
 
-  configureIfDomainEnabled(Domain.CORE, () => configureCoreTools(server, tokenProvider, connectionProvider, userAgentProvider));
+  configureIfDomainEnabled(Domain.CORE, () => {
+    configureCoreTools(server, tokenProvider, connectionProvider, userAgentProvider);
+    registerCustomCoreTools(server, connectionProvider); // Custom/on-prem hook
+  });
   configureIfDomainEnabled(Domain.MCP_APPS, () => configureMcpAppsTools(server));
   configureIfDomainEnabled(Domain.WORK, () => configureWorkTools(server, tokenProvider, connectionProvider));
   configureIfDomainEnabled(Domain.PIPELINES, () => configurePipelineTools(server, tokenProvider, connectionProvider, userAgentProvider));
